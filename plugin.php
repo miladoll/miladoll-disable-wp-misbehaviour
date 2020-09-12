@@ -21,8 +21,25 @@ class miladoll_disable_wp_misbehaviour {
             // 管理ページ下で動作させると異常を呼ぶので除外
             // 　例）「一般設定」→「サイトアドレス」値が消えるなど
             self::add_action_when_loaded();
+            self::add_action_when_init();
+        }
+        if ( is_admin() ) {
+            self::remove_dashboard_widgets();
         }
     }
+
+    public function remove_dashboard_widgets() {
+        add_action(
+            'wp_dashboard_setup',
+            function(){
+                remove_meta_box('dashboard_quick_press','dashboard','side'); // クイックドラフト
+                remove_meta_box('dashboard_primary','dashboard','side'); // WordPressニュース
+                remove_meta_box('dashboard_site_health','dashboard','normal'); // サイトヘルスステータス
+                remove_meta_box('monsterinsights_reports_widget','dashboard','normal'); // MonsterInsights
+            }
+        );
+    }
+
 
     public function setup_plugin() {
         // Plugin API
@@ -151,6 +168,42 @@ class miladoll_disable_wp_misbehaviour {
         メインブロック
     */
 
+    public function add_action_when_init() {
+        add_action( 'init', array( $this, 'init_behave' ) , PHP_INT_MAX, 1 );
+    }
+    public function init_behave() {
+        // 絵文字をSVG化する機能を排除する
+        remove_action( 'wp_head', 'print_emoji_detection_script', 7 );
+        remove_action( 'admin_print_scripts', 'print_emoji_detection_script' );
+        remove_action( 'wp_print_styles', 'print_emoji_styles' );
+        remove_action( 'admin_print_styles', 'print_emoji_styles' );	
+        remove_filter( 'the_content_feed', 'wp_staticize_emoji' );
+        remove_filter( 'comment_text_rss', 'wp_staticize_emoji' );	
+        remove_filter( 'wp_mail', 'wp_staticize_emoji_for_email' );
+        add_filter( 'tiny_mce_plugins',
+            function ( $plugins ) {
+                if ( is_array( $plugins ) ) {
+                    return array_diff( $plugins, array( 'wpemoji' ) );
+                }
+                return array();
+            }
+        );
+        add_filter(
+            'wp_resource_hints',
+            function ( $urls, $relation_type ) {
+                if ( 'dns-prefetch' == $relation_type ) {
+                    $emoji_svg_url_bit = 'https://s.w.org/images/core/emoji/';
+                    foreach ( $urls as $key => $url ) {
+                        if ( strpos( $url, $emoji_svg_url_bit ) !== false ) {
+                            unset( $urls[$key] );
+                        }
+                    }
+                }
+                return $urls;
+            },
+            10, 2
+        );
+    }
     public function add_action_when_loaded() {
         add_action( 'wp_loaded', array( $this, 'behave' ) , PHP_INT_MAX, 1 );
     }
@@ -164,6 +217,14 @@ class miladoll_disable_wp_misbehaviour {
         remove_action( 'wp_head', 'rsd_link' );
         // <link rel='shortlink' ...
         remove_action( 'wp_head', 'wp_shortlink_wp_head', 10, 0 );
+        // Link:<http://xxxxx/?p=14>; rel=shortlink
+        // TODO: 消えない。Why?
+        add_filter(
+            'after_setup_theme',
+            function() {
+                remove_action( 'template_redirect', 'wp_shortlink_header', 11 );
+            }
+        );
         // <link rel='https://api.w.org/' ...
         remove_action('wp_head','rest_output_link_wp_head');
         // <link rel="alternate" type="application/json+oembed" ...
@@ -197,6 +258,22 @@ _EOF_rss;
             },
             99
         );
+        // extend Gutenberg Auto-Save interval
+        add_filter(
+            'block_editor_settings',
+            function ( $editor_settings, $post ) {
+                if ( $post->post_type === 'page' ) {
+                    $editor_settings['autosaveInterval'] = 600;
+                } else {
+                    $editor_settings['autosaveInterval'] = 600;
+                }
+                return $editor_settings;
+            },
+            10, 2
+        );
+        // JetPack: social_menu_include_svg_icons
+        remove_action( 'wp_footer', 'jetpack_social_menu_include_svg_icons', 9999 );
+
     }
 
 }
